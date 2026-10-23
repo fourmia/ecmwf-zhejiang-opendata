@@ -128,13 +128,27 @@ PARAMS_SFC_RAD = [
 
 # 辐射变量名集合（用于后处理识别）
 RAD_ACCUM_VARS = set(PARAMS_SFC_RAD)
+# 向下辐射（物理上不可为负，差分误差 clip 到 0）
+RAD_DOWNWARD_VARS = {"ssrd", "ssr", "strd"}
 
-# 压力层变量
-PARAMS_PL = ["z", "t", "u", "v", "q", "r"]
-# z=位势高度, t=温度, u/v=风场, q=比湿, r=相对湿度
+# 地面层 — 可选扩展变量（完整 45 个 SFC 参数的剩余部分，--extra 启用）
+PARAMS_SFC_EXTRA = [
+    "100u", "100v",                          # 100米风场（风能行业）
+    "cp", "sf", "ptype", "tprate",           # 降水细分
+    "tcwv", "tclw", "tciw", "tcrw", "tcw",  # 整层水汽与云水
+    "sd", "rsn", "asn", "ro", "vsw", "sot", # 陆面与土壤
+    "sithick", "zos", "lsm",                 # 海洋与静态场
+    "ewss", "nsss",                          # 湍流通量（累计量）
+    "sve", "svn",                            # 海浪
+]
 
-# 标准压力层（hPa）
-LEVELS_PL = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100]
+# 压力层变量（完整 10 个）
+PARAMS_PL = ["z", "gh", "t", "u", "v", "w", "q", "r", "d", "vo"]
+# z=位势, gh=位势高度, t=温度, u/v=风场, w=垂直速度
+# q=比湿, r=相对湿度, d=散度, vo=相对涡度
+
+# 标准压力层（hPa）—— 14层
+LEVELS_PL = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50, 10]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 预报步长预设
@@ -195,6 +209,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--grib-only", action="store_true",
         help="仅下载 GRIB2，不转 NetCDF",
+    )
+    p.add_argument(
+        "--extra", action="store_true",
+        help="下载扩展 SFC 参数（100m风、降水细分、陆面、海洋等共24个额外变量）",
     )
     return p.parse_args()
 
@@ -285,11 +303,13 @@ def deaccumulate_radiation(ds):
         elif arr.ndim == 2:             # (step, lat) or (step, lon)
             dt = dt[:, np.newaxis]
         # dt==0 时（step=0）令通量=0，避免除零
-        dt = np.where(dt == 0, 1.0, dt)
-        flux_arr = np.where(dt == 1.0, 0.0, arr / dt)  # step=0 处已为0
-        # 更干净地处理：直接用 arr（step=0已设0）/ dt（step=0设1避免nan）
-        flux_arr = arr / np.where(dt == 0, 1.0, dt)
+        dt_safe  = np.where(dt == 0, 1.0, dt)
+        flux_arr = arr / dt_safe
         flux_arr[0] = 0.0  # 确保 step=0 通量为0
+
+        # 向下辐射物理上不可为负（差分舍入误差），clip 到 0
+        if var in RAD_DOWNWARD_VARS:
+            flux_arr = np.where(flux_arr < 0, 0.0, flux_arr)
 
         flux = xr.DataArray(
             flux_arr,
@@ -314,12 +334,25 @@ def deaccumulate_radiation(ds):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 后处理②：GRIB2 → 裁剪浙江 → NetCDF
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 21 个 sfc GRIB shortName（以 index 文件验证为准）
+# 完整 45 个 sfc GRIB shortName（以 index 文件验证为准）
 _SFC_SHORT_NAMES = [
+    # 核心气象（21个，已验证）
     "10fg", "10u", "10v", "2d", "2t", "hcc", "lcc", "mcc",
     "mn2t3", "msl", "mucape", "mx2t3", "skt", "sp",
     "ssr", "ssrd", "str", "strd", "tcc", "tp", "ttr",
+    # 扩展参数（24个）
+    "100u", "100v",
+    "asn", "cp", "ewss", "lsm", "nsss", "ptype",
+    "ro", "rsn", "sd", "sf", "sithick", "sve", "svn",
+    "tciw", "tclw", "tcrw", "tcw", "tcwv", "tprate",
+    "vsw", "zos", "sot",
 ]
+
+# mn2t3/mx2t3 与 2t 在 cfgrib 中都读成 t2m，按 paramId 区分
+_RENAME_BY_PARAMID = {
+    228027: "mn2t3",   # Minimum temperature at 2 metres in the last 3 hours
+    228026: "mx2t3",   # Maximum temperature at 2 metres in the last 3 hours
+}
 
 
 def grib_to_netcdf(
@@ -379,6 +412,11 @@ def grib_to_netcdf(
                         latitude=slice(BBOX["north"], BBOX["south"]),
                         longitude=slice(BBOX["west"],  BBOX["east"]),
                     )
+                # mn2t3/mx2t3 cfgrib 读为 t2m，按 paramId 重命名
+                for v in list(ds.data_vars):
+                    pid = ds[v].attrs.get("GRIB_paramId") or ds[v].attrs.get("paramId")
+                    if pid and int(pid) in _RENAME_BY_PARAMID:
+                        ds = ds.rename({v: _RENAME_BY_PARAMID[int(pid)]})
                 per_var.append(ds)
             except Exception:
                 pass  # 该变量在此文件中不存在则跳过
@@ -418,6 +456,8 @@ def main():
 
     steps      = STEP_PRESETS[args.steps]
     sfc_params = PARAMS_SFC_MET + ([] if args.no_rad else PARAMS_SFC_RAD)
+    if args.extra:
+        sfc_params = sfc_params + PARAMS_SFC_EXTRA
 
     # ── 摘要 ──────────────────────────────────────────────────────
     print("=" * 60)
