@@ -292,11 +292,11 @@ def main():
         date, time_utc = infer_run_time(lag_hours=args.lag_hours)
         log.info(f"自动推算起报: {date} {time_utc:02d}z UTC（滞后 {args.lag_hours}h）")
     
-    # ── 确定预报步长（00z/12z 完整，06z/18z 仅 0–90h）────────
+    # ── 确定预报步长（00z/12z 完整360h，06z/18z 仅 0–90h）────────
     if time_utc in [0, 12]:
-        # 00z/12z: 0–144h/3h + 150–240h/6h
-        steps = list(range(0, 145, 3)) + list(range(150, 241, 6))
-        log.info(f"预报步长: 0–240h（主运行批次）")
+        # 00z/12z: 0–144h/3h + 150–360h/6h (共 85 步)
+        steps = list(range(0, 145, 3)) + list(range(150, 361, 6))
+        log.info(f"预报步长: 0–360h（主运行批次，15天）")
     else:
         # 06z/18z: 0–90h/1h
         steps = list(range(0, 91, 1))
