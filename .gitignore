@@ -1,0 +1,8 @@
+ecmwf_data*/
+*.grib2
+*.idx
+*.log
+*.pid
+__pycache__/
+*.pyc
+.DS_Store
