@@ -16,7 +16,10 @@
 | **授权协议** | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — 署名即可免费商用 |
 | **起报时次** | 00z / 06z / 12z / 18z（UTC） |
 | **预报时效** | 00z/12z：0–144h（3h步）+ 150–360h（6h步）；06z/18z：0–90h（1h步） |
-| **0.1° 特有说明** | 地面层（sfc）与压力层（pl）文件分开，发布时间比 0.25° 约晚 2 小时 |
+| **GRIB2 编码** | CCSDS（AEC）压缩；**按参数调整 Bits per value**（每值比特数逐参数优化）|
+| **工具链要求** | eccodes ≥ 2.25 / cfgrib ≥ 0.9.10（须支持 CCSDS/AEC 解码器）|
+| **并发限制** | ECMWF 官方门户 500–2000 并发连接；AWS / GCS / Azure 镜像无此限制 |
+| **0.1° 特有说明** | 地面层（sfc）与压力层（pl）文件独立存储，发布时间比 0.25° 约晚 2 小时 |
 
 **官方文档**：
 - 主页：<https://confluence.ecmwf.int/display/DAC/ECMWF+open+data%3A+real-time+forecasts+from+IFS+and+AIFS>
