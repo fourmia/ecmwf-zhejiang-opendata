@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 测试四个起报时次的完整下载
-验证：00z/12z → 85步(0-360h), 06z/18z → 91步(0-90h)
+验证：00z/12z → 85步(0-360h), 06z/18z → 31步(0-90h/3h)
+注意：06z/18z 使用 3h 步长，不是 1h（官方文档错误）
 """
 import os
 import sys
@@ -14,27 +15,29 @@ os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:1082'
 
 client = Client(source='google', model='ifs', resol='0p1')
 
-test_date = 20261022
+# 使用最新数据（date=-1），避免历史数据不可用
+test_date = -1
 test_param = '2t'
 output_dir = 'test_all_cycles'
 os.makedirs(output_dir, exist_ok=True)
 
-# 定义预期规则
+# 定义预期规则（修正：06z/18z 使用 3h 步长）
 test_config = {
     0:  {'steps': list(range(0, 145, 3)) + list(range(150, 361, 6)), 'expected': 85, 'label': '0-360h/主批次'},
-    6:  {'steps': list(range(0, 91, 1)), 'expected': 91, 'label': '0-90h/辅助批次'},
+    6:  {'steps': list(range(0, 91, 3)), 'expected': 31, 'label': '0-90h/辅助批次（3h步长）'},
     12: {'steps': list(range(0, 145, 3)) + list(range(150, 361, 6)), 'expected': 85, 'label': '0-360h/主批次'},
-    18: {'steps': list(range(0, 91, 1)), 'expected': 91, 'label': '0-90h/辅助批次'},
+    18: {'steps': list(range(0, 91, 3)), 'expected': 31, 'label': '0-90h/辅助批次（3h步长）'},
 }
 
 print("=" * 80)
-print(f"测试四个起报时次完整下载（{test_date} {test_param}）")
+print(f"测试四个起报时次完整下载（最新数据 {test_param}）")
+print("注意：06z/18z 使用 3h 步长（31步），不是官方文档声称的 1h 步长（91步）")
 print("=" * 80)
 
 results = []
 
 for time_utc, config in test_config.items():
-    fname = f"{output_dir}/{test_date}_{time_utc:02d}z_{test_param}.grib2"
+    fname = f"{output_dir}/latest_{time_utc:02d}z_{test_param}.grib2"
     
     print(f"\n[{time_utc:02d}z] 开始下载 {config['label']}...")
     print(f"  请求步长数: {len(config['steps'])}")
