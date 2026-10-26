@@ -298,9 +298,9 @@ def main():
         steps = list(range(0, 145, 3)) + list(range(150, 361, 6))
         log.info(f"预报步长: 0–360h（主运行批次，15天）")
     else:
-        # 06z/18z: 0–90h/1h
-        steps = list(range(0, 91, 1))
-        log.info(f"预报步长: 0–90h（辅助批次，1h步长）")
+        # 06z/18z: 0–90h/3h（实测31步；1h步长文件不存在，官方文档有误）
+        steps = list(range(0, 91, 3))
+        log.info(f"预报步长: 0–90h（辅助批次，3h步长，31步）")
     
     # ── 解析要素列表 ──────────────────────────────────────
     params = [p.strip() for p in args.params.split(",") if p.strip()]
