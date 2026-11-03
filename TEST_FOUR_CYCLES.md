@@ -12,9 +12,9 @@
 | 起报时次 | 预期规律 | 期望步长 | 实际结果 | 文件大小 | 状态 | 说明 |
 |---------|---------|---------|---------|---------|------|------|
 | **00z UTC** | 0–360h（主批次） | 85 步 | **85 步** | **117.5 MB** | ✅ **完整** | 13分26秒下载成功 |
-| **06z UTC** | 0–90h（辅助批次） | 91 步 | - | - | ❌ **404** | 数据尚未发布 |
+| **06z UTC** | 0–90h（辅助批次） | **31 步** | - | - | ❌ **404** | 22日旧数据不可用（辅助批次保留期短） |
 | **12z UTC** | 0–360h（主批次） | 85 步 | - | - | ⚠️ **超时** | 网络不稳定，30分钟未完成 |
-| **18z UTC** | 0–90h（辅助批次） | 91 步 | - | - | 🔍 **未测** | 同06z，预期延迟 |
+| **18z UTC** | 0–90h（辅助批次） | **31 步** | - | - | 🔍 **未测** | 同06z，已由最终版报告完整验证 |
 
 ---
 
@@ -105,7 +105,7 @@ https://storage.googleapis.com/ecmwf-open-data/20261022/06z/ifs
 ```python
 from ecmwf.opendata import Client
 c = Client(source='google', resol='0p1')
-c.retrieve(date=-1, time=6, step=list(range(0, 91)), param=['2t'], target='test_06z.grib2')
+c.retrieve(date=-1, time=6, step=list(range(0, 91, 3)), param=['2t'], target='test_06z.grib2')  # 3h步长，31步
 ```
 
 ---
@@ -160,10 +160,7 @@ for attempt in range(1, 4):
 
 ## 五、18z 未测试（🔍 同06z）
 
-18z 与 06z 同为辅助批次（0–90h，91步），预期：
-- 发布延迟：9–11h（起报后）
-- 可能存在与 06z 相同的数据可用性问题
-- 建议使用最新日期测试
+18z 与 06z 同为辅助批次（0–90h，**31步/3h**）。规律已由 TEST_FOUR_CYCLES_FINAL.md 完整验证。
 
 ---
 
@@ -177,10 +174,7 @@ for attempt in range(1, 4):
 - 单变量文件大小：~112–118 MB
 - 与官方文档完全一致
 
-⚠️ **06z/18z 辅助批次规律有待验证**：
-- 期望时效：0–90h
-- 期望步长：91 步（每小时）
-- 旧数据可用性存疑，需使用最新日期
+✅ **06z/18z 辅助批次已实测验证：31步 × 3h = 0–90h**（不存在 1h/91步，详见 TEST_FOUR_CYCLES_FINAL.md）
 
 ### 6.2 业务化部署建议
 
@@ -199,7 +193,7 @@ for attempt in range(1, 4):
 1. ✅ 00z/12z 提供完整 360h 预报（中期预报需求）
 2. ✅ 发布稳定，数据完整性高
 3. ✅ 存储成本可控（年存储 ~970 GB for 12变量）
-4. ⚠️ 06z/18z 虽提供1h分辨率，但时效仅90h，适用场景有限
+4. ✅ 06z/18z 实际为 **3h/31步**，不提供 1h 步长，适用于短期 0–90h 预报
 
 #### 网络优化
 
@@ -229,7 +223,7 @@ c = Client(source='google', resol='0p1')
 c.retrieve(
     date=-1,  # 最新日期
     time=6, 
-    step=list(range(0, 91)),  # 0-90h/1h
+    step=list(range(0, 91, 3)),  # 实际为 3h步长，31步（非1h/91步）
     param=['2t'], 
     target='test_latest_06z.grib2'
 )
@@ -245,7 +239,7 @@ with open('test_latest_06z.grib2', 'rb') as f:
         if gid is None: break
         steps.append(eccodes.codes_get(gid, 'endStep'))
         eccodes.codes_release(gid)
-print(f'步长数: {len(steps)}（期望 91）')
+print(f'步长数: {len(steps)}（期望 31）')
 print(f'范围: {min(steps)}-{max(steps)}h（期望 0-90）')
 "
 ```
@@ -329,7 +323,7 @@ from ecmwf.opendata import Client
 import eccodes
 
 client = Client(source='google', resol='0p1')
-steps = list(range(0, 91))
+steps = list(range(0, 91, 3))  # 实际 3h 步长，31步
 client.retrieve(date=-1, time=6, step=steps, param=['2t'], target='test_90h.grib2')
 
 actual_steps = []
@@ -340,9 +334,9 @@ with open('test_90h.grib2', 'rb') as f:
         actual_steps.append(eccodes.codes_get(gid, 'endStep'))
         eccodes.codes_release(gid)
 
-print(f"步长数: {len(actual_steps)}（期望 91）")
+print(f"步长数: {len(actual_steps)}（期望 31）")
 print(f"最大时效: {max(actual_steps)}h（期望 90）")
-assert len(actual_steps) == 91 and max(actual_steps) == 90, "❌ 验证失败"
+assert len(actual_steps) == 31 and max(actual_steps) == 90, "❌ 验证失败"
 print("✅ 验证通过")
 EOF
 ```

@@ -14,13 +14,13 @@ ECMWF（欧洲中期天气预报中心）于 **2026 年 10 月 20 日**通过 Op
 | **数据格式** | GRIB2 |
 | **预报层次** | 地面单层（`levtype=sfc`） |
 | **起报时次** | 00z/06z/12z/18z UTC（每天 4 次） |
-| **预报步长** | 00z/12z: 0–144h（3h）+ 150–360h（6h）<br>06z/18z: 0–90h（1h） |
+| **预报步长** | 00z/12z: 0–144h（3h）+ 150–360h（6h）<br>06z/18z: 0–90h（**3h**，31步）⚠️ 官方文档所写1h/91步有误 |
 | **覆盖范围** | 全球（0–360°E, 90°S–90°N） |
 | **数据源** | AWS, Google Cloud, Azure, ECMWF（推荐 Google Cloud，国内代理友好） |
 
 ---
 
-## 要素列表（共 28 个地面变量）
+## 要素列表（官方声明 28 个核心变量；index 文件实际含 45 个）
 
 ### 温度相关（5 个）
 
@@ -38,7 +38,7 @@ ECMWF（欧洲中期天气预报中心）于 **2026 年 10 月 20 日**通过 Op
 |-----------|-----|-----|-----|
 | `10u` | 10 metre U wind component | m/s | 10米东西向风速 |
 | `10v` | 10 metre V wind component | m/s | 10米南北向风速 |
-| `10fg` | 10 metre wind gust since previous post-processing | m/s | 10米阵风（过去3小时） |
+| `10fg` | Maximum 10 metre wind gust since previous post-processing | m/s | **过去3小时最大阵风**（stepType=max，非瞬时值） |
 | `100u` | 100 metre U wind component | m/s | 100米东西向风速 |
 | `100v` | 100 metre V wind component | m/s | 100米南北向风速 |
 
@@ -74,7 +74,7 @@ ECMWF（欧洲中期天气预报中心）于 **2026 年 10 月 20 日**通过 Op
 | `strd` | Surface thermal radiation downwards | J/m² | 地表长波辐射（累积） |
 | `ssr` | Surface net solar radiation | J/m² | 地表净短波辐射（累积） |
 | `str` | Surface net thermal radiation | J/m² | 地表净长波辐射（累积） |
-| `ttr` | Top net thermal radiation | J/m² | 大气顶净长波辐射（累积） |
+| `ttr` | Top net thermal radiation | J/m² | 大气顶净长波辐射/OLR（累积，**向外为负**，有效统计量看 min） |
 
 ### 水汽相关（3 个）
 
@@ -95,34 +95,31 @@ ECMWF（欧洲中期天气预报中心）于 **2026 年 10 月 20 日**通过 Op
 
 ## 与官方文档对比核验
 
-### ✅ 已核实：与官方列表一致（28 个变量）
+### ✅ 官方声明 28 个，index 文件实际含 45 个
 
-官方文档列出的 28 个地面要素（[原文链接](https://confluence.ecmwf.int/spaces/DAC/pages/738041087/ECMWF+open+data+what+s+new+at+0.1%C2%B0)）：
+官方文档列出核心 28 个地面要素。从 Google Cloud Storage index 文件直接读取，实际可用 **45 个** shortName：
 
 ```
-2t, 2d, skt, mn2t3, mx2t3,
-10u, 10v, 10fg, 100u, 100v,
-msl, sp,
-tp, cp, sf, ptype,
-tcc, lcc, mcc, hcc,
-ssrd, strd, ssr, str, ttr,
-tcwv, tclw, tciw,
-mucape
+100u, 100v, 10fg, 10u, 10v, 2d, 2t, asn, cp, ewss, hcc, lcc, lsm,
+mcc, mn2t3, msl, mucape, mx2t3, nsss, ptype, ro, rsn, sd, sf,
+sithick, skt, sot, sp, ssr, ssrd, str, strd, sve, svn, tcc, tciw,
+tclw, tcrw, tcw, tcwv, tp, tprate, ttr, vsw, zos
 ```
 
-本文档覆盖全部 28 个变量，分类清晰，无遗漏。
+本文档重点列出常用 28 个变量，其余参数可按需请求。
 
 ### 已知问题
 
-1. **ssrd（太阳辐射）负值问题**  
-   夜间步长的 `ssrd`（累积太阳辐射）为负值（-1 W/m² 或 -3600 J/m²/h），需后处理时截断为 0。
+1. **辐射变量符号约定**
+   - `ssrd`/`strd` 向下辐射：夜间差分后因数值噪声可能出现小负值（约 -1 W/m²），后处理截断为 0 即可。
+   - `str`/`ttr` 净辐射与 OLR：**正常为负值**（向外辐射定义为负），`max≈0` 属正常，有效统计量应看 `min`。
 
 2. **累积变量计算**  
    辐射（`ssrd`/`strd`/`ssr`/`str`/`ttr`）和降水（`tp`/`cp`/`sf`）为**累积值**（从起报时间开始），需差分计算小时累积量：  
    `hourly_value = step_N - step_(N-1)`
 
-3. **06z/18z 时次覆盖**  
-   06z/18z 仅提供 0–90h（1h 步长），适合短期预报；00z/12z 提供完整 0–240h。
+3. **06z/18z 时次覆盖**（⚠️ 已更正）
+   06z/18z 提供 0–90h，步长 **3h**（31步）。**不存在官方声称的 1h 步长文件**（GCS index 文件 404 验证）。00z/12z 提供完整 **0–360h**（15天，85步），非早期所述 240h。
 
 ---
 
@@ -140,7 +137,7 @@ mucape
 2t,2d,10u,10v,tp,msl,sp,tcc,10fg,mucape,ssrd,strd
 ```
 
-### 完整集合（28 个全部要素）
+### 完整集合（28 个核心要素）
 用于科研或完整归档：
 ```
 2t,2d,mn2t3,mx2t3,skt,10u,10v,10fg,100u,100v,msl,sp,tp,cp,sf,ptype,tcc,lcc,mcc,hcc,mucape,ssrd,strd,ssr,str,ttr,tcwv,tclw,tciw
@@ -152,7 +149,7 @@ mucape
 
 本项目提供的 `cron_fetch_ecmwf.py` 脚本支持：
 - 自动推算起报时间（滞后8小时避免数据未就绪）
-- 下载全时长（00z/12z: 0–240h, 06z/18z: 0–90h）
+- 下载全时长（00z/12z: 0–360h / 85步；06z/18z: 0–90h / 3h / 31步）
 - 失败自动重试
 - 代理自动检测（macOS）
 - 输出原始 GRIB2（无后处理）
@@ -177,6 +174,12 @@ python cron_fetch_ecmwf.py \
 
 ---
 
-**核对日期**: 2026-10-23  
-**核对人**: Kiro (AI Agent)  
-**结论**: 与官方文档 100% 一致，所有 28 个地面层要素已列出。
+**最初核对日期**: 2026-10-23
+**勘误更新日期**: 2026-10-26
+**核对人**: Kiro (Claude Opus 5.5)
+**勘误说明**:
+- 06z/18z 步长：1h/91步 → **3h/31步**（实测更正，官方文档有误）
+- 00z/12z 时效：240h → **360h**（实测更正）
+- `10fg`："瞬时阵风" → **过去3小时最大阵风**（stepType=max）
+- `ttr`：补充负值说明（向外辐射为负）
+- 变量总数：官方 28 个，index 文件实际含 **45 个**
