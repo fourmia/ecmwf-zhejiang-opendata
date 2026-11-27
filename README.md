@@ -24,6 +24,7 @@ ecmwf-zhejiang-opendata/
 ├── src/
 │   ├── ecmwf_common.py            # 单一来源：参数、压力层、步长、代理检测
 │   ├── download_ecmwf.py          # 单次下载：GRIB2 → 裁剪浙江 → NetCDF4
+│   ├── download_gcs_batch.py      # GCS 原始整文件：仅代理、断点续传、MD5、配套索引
 │   ├── cron_fetch_ecmwf.py        # 业务化：自动起报时次 + 全时长 + 重试
 │   ├── cron_fetch_era5.py         # ERA5：GCS 公开桶直取
 │   └── requirements.txt
@@ -99,6 +100,36 @@ ecmwf_data/
 ├── ecmwf_zj_sfc_20261022_00z.nc   # 地面层（浙江裁剪，zlib 压缩）
 └── ecmwf_zj_pl_20261022_00z.nc    # 压力层（可选）
 ```
+
+### 原始整文件归档（断点续传与 MD5 校验）
+
+`src/download_gcs_batch.py` 保存 GCS 发布的逐时效原始 GRIB2 和配套 `.index`，
+默认先地面层（含土壤层）、再压力层；不裁剪、不转 NetCDF。仅使用标准库及项目共享步长定义。
+必须配置代理；可用 `--proxy` 显式指定，也可读取系统/环境 HTTPS 代理。
+
+```bash
+python src/download_gcs_batch.py \
+  --date 20261125 --time 12 \
+  --outdir "/Volumes/T7 Shield/EC_IFS_0P01" \
+  --require-mount "/Volumes/T7 Shield" \
+  --proxy http://127.0.0.1:1082
+
+# 仅补齐地面层和压力层的索引
+python src/download_gcs_batch.py \
+  --date 20261125 --time 12 \
+  --outdir "/Volumes/T7 Shield/EC_IFS_0P01" \
+  --require-mount "/Volumes/T7 Shield" \
+  --proxy http://127.0.0.1:1082 --index-only
+```
+
+输出位于 `{outdir}/{date}/{time:02d}z/`；GRIB2 在该目录下，索引分别在
+`index/sfc/` 和 `index/pl/`。重复运行相同命令会校验并跳过已完成文件，
+从 `.part` 字节位置继续下载；MD5 与 GCS 元数据匹配后才改为正式文件名。
+已有正式文件校验失败时停止并保留文件。传输超时/SSL 错误会自动重试，
+连续 8 次无进展后退出，需重新运行命令；不会切换为直连。
+
+该脚本要求共享步长定义中的文件全部已发布；批次过旧已被源端清除或文件缺失时会停止。
+20261125 12z 的完整实测结果见 [下载记录](docs/GCS_BATCH_20261125_12Z.md)。
 
 ### 命令行参数
 
